@@ -137,3 +137,14 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Deno
+deno.lock
+
+# Local environment variables
+.env.local
+
+# Temporary data files
+data/tmp/
+
+data/job-listings-raw.json

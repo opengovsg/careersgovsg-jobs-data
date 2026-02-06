@@ -1,0 +1,33 @@
+name: Fetch Jobs Data
+
+on:
+  # schedule:
+    # Run every day at 00:00 UTC
+    # - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Fetch job listings
+        uses: githubocto/flat@fc34373cc20b987e89d75d96435a9fecd8fb0807
+        with:
+          http_url: ${{ secrets.CAREERSGOVSG_JOB_HEADER }}
+          downloaded_filename: data/job-listings-raw.json
+          postprocess: scripts/fetch-jobs.ts
+          axios_config: query.json
+          mask: true
+        env:
+          CAREERSGOVSG_JOB_DETAILS: ${{ secrets.CAREERSGOVSG_JOB_DETAILS }}

@@ -1,0 +1,17 @@
+{
+  "tasks": {
+    "process": "deno run --allow-import --allow-net --allow-env --allow-read --allow-write scripts/fetch-jobs.ts",
+    "dev": "deno run --allow-import --allow-net --allow-env --allow-read --allow-write --watch scripts/fetch-jobs.ts"
+  },
+  "fmt": {
+    "include": ["scripts/"],
+    "exclude": ["data/"]
+  },
+  "lint": {
+    "include": ["scripts/"],
+    "exclude": ["data/"]
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}
