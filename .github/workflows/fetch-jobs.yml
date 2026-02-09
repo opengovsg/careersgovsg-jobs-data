@@ -2,8 +2,8 @@ name: Fetch Jobs Data
 
 on:
   schedule:
-    # Run every weekday at 02:10 UTC (10:10 SGT)
-    - cron: '10 2 * * 1-5'
+    # Run every weekday at 02:10 and 07:10 UTC (10:10 and 15:10 SGT)
+    - cron: '10 2,7 * * 1-5'
   workflow_dispatch:
 
 permissions:
