@@ -30,7 +30,7 @@ Each object in the `results` array has these fields:
 - `Agnid` (string) - Agency ID code (e.g., "0000009145")
 
 A job listing is uniquely identified by the combination of `PostingNo` and `Jobid`.
-The job listing on jobs.careers.gov.sg is accessed via `https://jobs.careers.gov.sg/career/hrp/{Jobid}/{PostingNo}` (e.g., https://jobs.careers.gov.sg/career/hrp/15219929/005056a3-d347-1fe1-80df-725f7689c286).
+The job listing on jobs.careers.gov.sg is accessed via `https://jobs.careers.gov.sg/jobs/hrp/{Jobid}/{PostingNo}` (e.g., https://jobs.careers.gov.sg/jobs/hrp/15219929/005056a3-d347-1fe1-80df-725f7689c286).
 
 ### Job Information
 - `Jobtitle` (string) - Job title
