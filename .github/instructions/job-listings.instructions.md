@@ -1,89 +1,178 @@
 ---
-applyTo: "data/job-listings-raw.json"
+applyTo: "data/job-listings.*"
 ---
 
-# Job Listings Raw Data Schema
+# Job Listings Schema
 
-This file contains raw job listing data from Singapore Government agencies fetched via an OData service.
+Processed job listings data available in both JSON and CSV formats in the `data/` directory. This is the final output of the postprocessing pipeline, combining data from both the job listings and job details endpoints.
+
+## Files
+
+- `data/job-listings.json` - JSON array of processed jobs
+- `data/job-listings.csv` - CSV export of the same data
 
 ## Data Structure
 
-The file follows OData v2 conventions:
-
+### JSON Format
 ```json
-{
-  "d": {
-    "results": [
-      // Array of job listing objects
-    ]
+[
+  {
+    "postingNo": "005056a3-d347-1fe1-83ab-e89b314c0286",
+    "jobId": "17060737",
+    "jobTitle": "Senior Lead Policy Analyst/Paired Product Manager, HR Innovations",
+    // ... other fields
   }
-}
+]
 ```
 
-## Job Listing Object Schema
+### CSV Format
+All fields exported as columns with headers matching the field names below.
 
-Each object in the `results` array has these fields:
+## Schema Fields
 
 ### Core Identifiers
-- `PostingNo` (string) - Unique GUID for the posting (e.g., "005056a3-d347-1fe1-80df-725f7689c286")
-- `Jobid` (string) - Numeric job ID (e.g., "15219929")
-- `Agnid` (string) - Agency ID code (e.g., "0000009145")
+- **postingNo** (string) - Unique posting GUID. Primary identifier for the posting.
+- **jobId** (string) - Numeric job ID. Secondary identifier.
+- **agencyId** (string) - Agency identifier code (e.g., "0000001308")
 
-A job listing is uniquely identified by the combination of `PostingNo` and `Jobid`.
-The job listing on jobs.careers.gov.sg is accessed via `https://jobs.careers.gov.sg/jobs/hrp/{Jobid}/{PostingNo}` (e.g., https://jobs.careers.gov.sg/jobs/hrp/15219929/005056a3-d347-1fe1-80df-725f7689c286).
+Combined identifier: `PostingNo` + `Jobid` uniquely identifies a job posting.
+Job URL pattern: `https://jobs.careers.gov.sg/jobs/hrp/{Jobid}/{PostingNo}` (e.g., https://jobs.careers.gov.sg/jobs/hrp/15219929/005056a3-d347-1fe1-80df-725f7689c286).
 
 ### Job Information
-- `Jobtitle` (string) - Job title
-- `Agncy` (string) - Agency name (e.g., "Sport Singapore")
-- `agencytitle` (string) - Additional agency title (often empty)
+- **jobTitle** (string) - Job title, cleaned and trimmed
+- **agency** (string) - Agency name (e.g., "Public Service Division")
+- **agencyDescription** (string) - Detailed agency description (multiline, markdown-formatted)
 
-### Dates (OData format: `/Date(milliseconds)/`)
-- `Begda` (string) - Start date (e.g., `/Date(1768262400000)/`)
-- `Endda` (string) - End date/closing date
-- `ClosingDate` (string) - Human-readable (e.g., "Closing on 19 Feb 2026")
-- `RemainingDays` (string) - Time remaining (e.g., "Today", "Closing in 3 day(s)")
+### Dates and Timing
+- **startDate** (string) - Job posting start date as Unix timestamp in milliseconds (e.g., "1770681600000")
+- **closingDate** (string) - Job closing date as Unix timestamp in milliseconds (e.g., "1772928000000")
+- **closingDateText** (string) - Human-readable closing date (e.g., "Closing on 08 Mar 2026")
+- **remainingDays** (string) - Time remaining text (e.g., "Today", "Closing in 3 day(s)")
 
-### Experience
-- `Exper` (string) - Experience code
-- `Extxt` (string) - Human-readable (e.g., "05-10 year(s)", "Entry level")
-- `Frexp` (string) - Minimum experience years (e.g., "05")
-- `Toexp` (string) - Maximum experience years (e.g., "10")
+> **Note**: Dates are stored as Unix timestamps (milliseconds since epoch). Convert with `new Date(parseInt(timestamp))` or equivalent.
+
+### Employment Details
+- **employmentType** (string) - Employment type description (e.g., "Permanent", "Contract", "Permanent/Contract", "Fixed Terms")
+- **employmentTypeCode** (string) - Employment type code (e.g., "0001", "0002", "0003")
+- **workArrangement** (string) - Work arrangement description (e.g., "Full-time")
+
+### Experience Requirements
+- **experienceRequired** (string) - Human-readable experience requirement (e.g., "03-09 year(s)", "Entry level")
+- **experienceYearsMin** (number) - Minimum years of experience required (e.g., 3)
+- **experienceYearsMax** (number) - Maximum years in experience range (e.g., 9)
+
+> **Note**: For entry-level positions, both min and max are typically 0.
 
 ### Categorization
-- `Field` (string) - Field code (e.g., "0032")
-- `Fdesc` (string) - Field description (e.g., "Community Development, Partnership & Eng")
-- `Farea` (string) - Functional area code (e.g., "0012")
-- `Idesc` (string) - Industry description (may contain trailing spaces/`\u00a0`)
-- `Categ` (string) - Category code
+- **field** (string) - Field description (e.g., "Human Resources", "Data Analysis & Data Mgt")
+- **fieldCode** (string) - Field code (e.g., "0025", "0029")
+- **functionalArea** (string) - Functional area description (e.g., "Human Resources", "Data Analysis & Data Mgt")
+- **functionalAreaCode** (string) - Functional area code (e.g., "0006", "0013")
+- **industry** (string) - Industry description (e.g., "Research and Analysis", "Healthcare")
+- **educationCode** (string) - Education requirement code (e.g., "00", "03")
+- **category** (string) - Job category (e.g., "Others")
 
-### Employment
-- `EmpType` (string) - Code (e.g., "0003", "0006")
-- `EmpTypeTxt` (string) - Description (e.g., "Permanent/Contract", "Fixed Terms")
+> **Note**: `field` and `functionalArea` often contain the same value but come from different source fields.
+
+### Job Content
+- **jobDescription** (string) - Detailed job description (multiline, markdown-formatted)
+- **jobResponsibilities** (string) - Job responsibilities (multiline, bullet points, markdown-formatted)
+- **jobRequirements** (string) - Job requirements (multiline, bullet points, markdown-formatted)
+
+> **Important**: These fields can be several paragraphs long and contain:
+> - Newlines (`\n`)
+> - Bullet points (•)
+> - Rich text formatting
+> - Non-breaking spaces (cleaned during processing)
 
 ### Other Fields
-- `Educa` (string) - Education requirement code
-- `Fract`, `Frdes`, `Joblv`, `Posid`, `Compt`, `Sort`, `RequestType` - Various codes
-- `Newjb` (string) - "1" if new job
-- `Locationid`, `LocationTxt` (string) - Location (often empty)
-- `Isfav` (boolean) - Favorite flag (always false in raw data)
-
-### OData Metadata
-- `__metadata` (object) - Contains `id`, `uri`, `type` fields
-- `JobSearchToDetail` (object) - Deferred navigation property with URI to full details
+- **isNew** (boolean) - Whether this is a newly posted job (`true` or `false`)
+- **location** (string) - Work location (may be empty)
 
 ## Data Characteristics
 
-- **Total records**: ~1,900+ active listings (varies daily)
-- **Date format**: Must be parsed with regex `/\/Date\((\d+)\)\//`
-- **String cleaning**: Some fields contain `\u00a0` (non-breaking space) - should be trimmed
-- **Empty fields**: Many optional fields are empty strings
-- **Encoding**: UTF-8
+### Data Types
+- **Strings**: All text fields are cleaned (trimmed, non-breaking spaces removed)
+- **Numbers**: Experience years stored as integers
+- **Booleans**: `isNew` stored as boolean `true`/`false`
+- **Timestamps**: Dates stored as strings containing Unix timestamps in milliseconds
 
-## Processing Notes
+### Data Quality
+- All fields are required (exist in every record)
+- Text fields may be empty strings if no data available
+- Long text fields (`agencyDescription`, `jobDescription`, `jobResponsibilities`, `jobRequirements`) sourced from job details API
+- If job details fetch fails, related fields will be empty strings
 
-When working with this file:
-1. Parse OData dates by extracting milliseconds: `/Date(1768262400000)/ → 1768262400000`
-2. Clean strings with `.replace(/\u00a0/g, ' ').trim()`
-3. Parse experience ranges from `Frexp` and `Toexp` fields
-4. The `__metadata` object can be excluded in processed output
-5. Boolean `Isfav` is not meaningful in raw fetched data
+### Typical Dataset Size
+- **~1,900+ records** (varies daily based on active postings)
+- **JSON file**: ~10-15 MB (pretty-printed with 2-space indent)
+- **CSV file**: ~5-8 MB
+
+## Processing Pipeline
+
+This data is generated by [scripts/fetch-jobs.ts](../../scripts/fetch-jobs.ts):
+
+1. Fetches job listings from OData endpoint → `data/job-listings-raw.json`
+2. For each job, fetches detailed information from job details endpoint
+3. Merges both sources into flattened schema
+4. Cleans all string fields (trim, remove `\u00a0`)
+5. Converts OData dates (`/Date(timestamp)/`) to Unix timestamps
+6. Outputs both JSON and CSV formats
+
+## Common Operations
+
+### Filtering Jobs
+```typescript
+// Filter by agency
+const moeJobs = jobs.filter(j => j.agency.includes("Education"))
+
+// Filter by experience level
+const entryLevel = jobs.filter(j => j.experienceYearsMin === 0)
+
+// Filter by employment type
+const permanent = jobs.filter(j => j.employmentType === "Permanent")
+```
+
+### Date Handling
+```typescript
+// Convert timestamp to Date object
+const closingDate = new Date(parseInt(job.closingDate))
+
+// Check if closing soon (within 7 days)
+const now = Date.now()
+const daysUntilClose = (parseInt(job.closingDate) - now) / (1000 * 60 * 60 * 24)
+const closingSoon = daysUntilClose <= 7
+```
+
+### Text Processing
+```typescript
+// Split multiline fields
+const responsibilities = job.jobResponsibilities.split('\n')
+
+// Check for keywords in description
+const hasTech = job.jobDescription.toLowerCase().includes('technology')
+```
+
+## Validation Rules
+
+When working with this data:
+- ✅ `postingNo` must be valid GUID format
+- ✅ `jobId` must be numeric string
+- ✅ `startDate` and `closingDate` must be valid Unix timestamps
+- ✅ `experienceYearsMin` ≤ `experienceYearsMax`
+- ✅ `isNew` must be boolean type (not string "true"/"false")
+- ✅ No null values - use empty strings instead
+
+## Version Control
+
+This data is committed to git and updated via GitHub Actions:
+- Source data changes trigger automatic updates
+- Git history preserves all changes over time
+- Use `git log -- data/job-listings.json` to see update history
+- Diffs show which jobs were added/removed/modified
+
+## Related Files
+
+- **Raw input**: [data/job-listings-raw.json](../../data/job-listings-raw.json) - OData response before processing
+- **Processing script**: [scripts/fetch-jobs.ts](../../scripts/fetch-jobs.ts) - Transformation logic
+- **Job details**: `data/tmp/job-{jobId}.json` - Individual job detail files (git-ignored)
