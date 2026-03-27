@@ -49,7 +49,6 @@ The GitHub Action can be triggered manually via workflow_dispatch.
 
 ## Data Files
 Fetched data is saved in the `data/` directory:
-- `job-listings-raw.json`: Raw job listings data (OData format)
 - `job-listings.json`: Processed job listings
 - `job-listings.csv`: Processed job listings in CSV format
 
