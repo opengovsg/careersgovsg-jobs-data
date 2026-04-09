@@ -4,6 +4,11 @@ Job listings as found on jobs.careers.gov.sg
 ## Overview
 This repository uses GitHub Actions to automatically fetch and update Singapore Government job listings from Careers@Gov public data endpoints.
 
+## Data Files
+Most users would be interested in the fetched data, saved in the `data/` directory:
+- [`job-listings.json`](/data/job-listings.json): Processed job listings
+- [`job-listings.csv`](/data/job-listings.csv): Processed job listings in CSV format
+
 ## Setup
 
 ### Prerequisites
@@ -46,11 +51,6 @@ deno task dev
 
 ## Automated Updates
 The GitHub Action can be triggered manually via workflow_dispatch.
-
-## Data Files
-Fetched data is saved in the `data/` directory:
-- `job-listings.json`: Processed job listings
-- `job-listings.csv`: Processed job listings in CSV format
 
 ## For AI Agents
 
