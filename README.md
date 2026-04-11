@@ -9,6 +9,8 @@ Most users would be interested in the fetched data, saved in the `data/` directo
 - [`job-listings.json`](/data/job-listings.json): Processed job listings
 - [`job-listings.csv`](/data/job-listings.csv): Processed job listings in CSV format
 
+Information on the structure of the data is described at [job-listings.instructions.md](.github/instructions/job-listings.instructions.md).
+
 ## Setup
 
 ### Prerequisites
