@@ -120,6 +120,7 @@ interface JobDetailsResponse {
 }
 
 interface ProcessedJob {
+  platform: string
   postingNo: string
   jobId: string
   jobTitle: string
@@ -207,7 +208,7 @@ async function fetchJobDetails(postingNo: string, jobId: string): Promise<JobDet
 /**
  * Process a single job listing
  */
-function processJobListing(job: JobListing, details: JobDetails | null): ProcessedJob {
+function processJobListing(job: JobListing, details: JobDetails | null, platform: string = 'hrp'): ProcessedJob {
   // Parse experience years
   let minExp = 0
   let maxExp = 0
@@ -217,6 +218,7 @@ function processJobListing(job: JobListing, details: JobDetails | null): Process
   }
 
   return {
+    platform,
     postingNo: job.PostingNo,
     jobId: job.Jobid,
     jobTitle: cleanString(job.Jobtitle),
