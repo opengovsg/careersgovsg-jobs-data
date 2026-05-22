@@ -149,6 +149,51 @@ interface GreenhouseResponse {
   meta?: { total: number }
 }
 
+interface WorkableJobSummary {
+  title: string
+  shortcode: string
+  code: string
+  employment_type: string
+  telecommuting: boolean
+  department: string
+  url: string
+  shortlink: string
+  application_url: string
+  published_on: string
+  created_at: string
+  country: string
+  city: string
+  state: string
+  education: string
+  experience: string
+  function: string
+  industry: string
+  locations?: Array<{ country: string; countryCode: string; city: string; region: string; hidden: boolean }>
+}
+
+interface WorkableAccountResponse {
+  name: string
+  description: string
+  jobs: WorkableJobSummary[]
+}
+
+interface WorkableJobDetail {
+  id: number
+  shortcode: string
+  title: string
+  description: string
+  requirements: string
+  benefits: string
+  workplace: string
+  type: string
+  language: string
+  state: string
+  published: string
+  code: string
+  department: string[]
+  location?: { country: string; countryCode: string; city: string; region: string }
+}
+
 interface ProcessedJob {
   platform: string
   postingNo: string
@@ -404,6 +449,80 @@ async function fetchGreenhouseBoard(board: string): Promise<GreenhouseJob[]> {
 }
 
 /**
+ * Fetch a Workable account's public listings (agency metadata + job summaries).
+ * Throws on network or HTTP errors so the workflow fails loudly rather than
+ * silently dropping the account's contribution from the committed output.
+ */
+async function fetchWorkableAccount(account: string): Promise<WorkableAccountResponse> {
+  const url = `https://apply.workable.com/api/v1/widget/accounts/${account}`
+  console.log(`Fetching Workable account: ${account}`)
+  const response = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`Workable account fetch failed for ${account}: ${response.status} ${response.statusText}`)
+  }
+  return await response.json() as WorkableAccountResponse
+}
+
+/**
+ * Fetch a single Workable job's detail (description, requirements, workplace).
+ * Throws on network or HTTP errors.
+ */
+async function fetchWorkableJobDetail(account: string, shortcode: string): Promise<WorkableJobDetail> {
+  const url = `https://apply.workable.com/api/v2/accounts/${account}/jobs/${shortcode}`
+  const response = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`Workable detail fetch failed for ${account}/${shortcode}: ${response.status} ${response.statusText}`)
+  }
+  return await response.json() as WorkableJobDetail
+}
+
+/**
+ * Process a Workable job summary + detail pair into the unified ProcessedJob shape.
+ * `jobId` is the Workable account identifier (e.g. `psd-sg`); `postingNo` is the
+ * per-posting `shortcode`. The agency name and description are shared across all
+ * jobs in the account and sourced once from the listings response.
+ */
+function processWorkableJob(
+  summary: WorkableJobSummary,
+  detail: WorkableJobDetail,
+  account: string,
+  agency: string,
+  agencyDescription: string,
+): ProcessedJob {
+  return {
+    platform: 'workable',
+    postingNo: summary.shortcode,
+    jobId: account,
+    jobTitle: cleanString(summary.title ?? ''),
+    agency: cleanString(agency),
+    agencyId: '',
+    agencyDescription: cleanString(decodeHtmlEntities(agencyDescription)),
+    startDate: parseISODate(detail.published ?? summary.published_on),
+    closingDate: NaN,
+    closingDateText: '',
+    remainingDays: '',
+    employmentType: cleanString(summary.employment_type ?? ''),
+    employmentTypeCode: '',
+    experienceRequired: cleanString(summary.experience ?? ''),
+    experienceYearsMin: 0,
+    experienceYearsMax: 0,
+    field: cleanString(summary.function ?? ''),
+    fieldCode: '',
+    functionalArea: cleanString(summary.function ?? ''),
+    functionalAreaCode: '',
+    industry: cleanString(summary.industry ?? ''),
+    educationCode: cleanString(summary.education ?? ''),
+    isNew: false,
+    location: cleanString(summary.city ?? summary.country ?? ''),
+    jobDescription: cleanString(decodeHtmlEntities(detail.description ?? '')),
+    jobResponsibilities: '',
+    jobRequirements: cleanString(decodeHtmlEntities(detail.requirements ?? '')),
+    category: '',
+    workArrangement: cleanString(detail.workplace ?? ''),
+  }
+}
+
+/**
  * Main processing function
  */
 async function main() {
@@ -472,6 +591,24 @@ async function main() {
       const processed = greenhouseJobs.map(processGreenhouseJob)
       processedJobs.push(...processed)
       console.log(`✅ Processed ${processed.length} Greenhouse jobs from ${board}`)
+    }
+
+    // Fetch and merge Workable accounts (e.g. PSD)
+    const workableAccounts = ['psd-sg']
+    for (const account of workableAccounts) {
+      const accountData = await fetchWorkableAccount(account)
+      const agency = accountData.name ?? ''
+      const agencyDescription = accountData.description ?? ''
+      const summaries = accountData.jobs ?? []
+      console.log(`  Fetching ${summaries.length} Workable job details...`)
+      for (const [i, summary] of summaries.entries()) {
+        const detail = await fetchWorkableJobDetail(account, summary.shortcode)
+        processedJobs.push(processWorkableJob(summary, detail, account, agency, agencyDescription))
+        if (i < summaries.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+      console.log(`✅ Processed ${summaries.length} Workable jobs from ${account}`)
     }
 
     // Generate statistics
