@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Fetch job listings
-        uses: githubocto/flat@v6
+        uses: githubocto/flat@fc34373cc20b987e89d75d96435a9fecd8fb0807
         with:
           http_url: ${{ secrets.CAREERSGOVSG_JOB_HEADER }}
           downloaded_filename: data/job-listings-raw.json
