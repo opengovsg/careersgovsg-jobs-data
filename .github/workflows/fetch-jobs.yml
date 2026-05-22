@@ -14,15 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Deno
-        uses: denoland/setup-deno@v1
+        uses: denoland/setup-deno@v2
         with:
           deno-version: v1.x
 
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Fetch job listings
-        uses: githubocto/flat@fc34373cc20b987e89d75d96435a9fecd8fb0807
+        uses: githubocto/flat@v6
         with:
           http_url: ${{ secrets.CAREERSGOVSG_JOB_HEADER }}
           downloaded_filename: data/job-listings-raw.json
@@ -30,4 +30,5 @@ jobs:
           axios_config: query.json
           mask: true
         env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           CAREERSGOVSG_JOB_DETAILS: ${{ secrets.CAREERSGOVSG_JOB_DETAILS }}
