@@ -9,6 +9,7 @@
 
 import { readJSON, writeJSON } from 'https://deno.land/x/flat@0.0.15/mod.ts'
 import { stringify } from 'https://deno.land/std@0.218.0/csv/stringify.ts'
+import { unescape as unescapeHtml } from 'https://deno.land/std@0.218.0/html/entities.ts'
 import { existsSync } from 'jsr:@std/fs/exists'
 
 interface ODataMetadata {
@@ -119,6 +120,35 @@ interface JobDetailsResponse {
   d: JobDetails
 }
 
+interface GreenhouseMetadataItem {
+  id: number
+  name: string
+  value: unknown
+  value_type: string
+}
+
+interface GreenhouseJob {
+  id: number
+  internal_job_id: number
+  requisition_id: string
+  title: string
+  company_name: string
+  absolute_url: string
+  first_published: string
+  updated_at: string
+  application_deadline: string | null
+  language: string
+  content: string
+  education: string | null
+  location: { name: string } | null
+  metadata: GreenhouseMetadataItem[]
+}
+
+interface GreenhouseResponse {
+  jobs: GreenhouseJob[]
+  meta?: { total: number }
+}
+
 interface ProcessedJob {
   platform: string
   postingNo: string
@@ -166,10 +196,59 @@ function parseODataDate(odataDate: string): number {
 }
 
 /**
+ * Parse ISO 8601 date to epoch millis. Returns NaN for null/empty/invalid input.
+ */
+function parseISODate(iso: string | null | undefined): number {
+  return iso ? Date.parse(iso) : NaN
+}
+
+/**
  * Clean string by trimming and removing non-breaking spaces
  */
 function cleanString(str: string): string {
   return str.replace(/\u00a0/g, ' ').trim()
+}
+
+/**
+ * Decode HTML entities, applied iteratively to handle double-encoded inputs
+ * (e.g. Greenhouse content where `&` characters are encoded as `&amp;amp;`).
+ * HTML tags are left intact.
+ */
+function decodeHtmlEntities(input: string): string {
+  if (!input) return ''
+  let prev = input
+  let curr = unescapeHtml(prev)
+  while (curr !== prev) {
+    prev = curr
+    curr = unescapeHtml(prev)
+  }
+  return curr
+}
+
+/**
+ * Parse Greenhouse experience-level strings into a numeric range.
+ * Inputs look like "0 - 1 year", "1 - 3 years", "> 10 years".
+ * When multiple levels are selected, the range spans the union.
+ */
+function parseExperienceLevels(levels: string[]): { min: number; max: number } {
+  let min = Infinity
+  let max = 0
+  for (const lvl of levels) {
+    if (!lvl) continue
+    const gt = lvl.match(/>\s*(\d+)/)
+    if (gt) {
+      const n = parseInt(gt[1], 10)
+      min = Math.min(min, n)
+      max = Math.max(max, n)
+      continue
+    }
+    const range = lvl.match(/(\d+)\s*-\s*(\d+)/)
+    if (range) {
+      min = Math.min(min, parseInt(range[1], 10))
+      max = Math.max(max, parseInt(range[2], 10))
+    }
+  }
+  return { min: min === Infinity ? 0 : min, max }
 }
 
 /**
@@ -250,6 +329,80 @@ function processJobListing(job: JobListing, details: JobDetails | null, platform
   }
 }
 
+function getGreenhouseMeta(metadata: GreenhouseMetadataItem[], name: string): unknown {
+  return metadata.find((m) => m.name === name)?.value
+}
+
+/**
+ * Process a single Greenhouse job listing into the unified ProcessedJob shape.
+ */
+function processGreenhouseJob(job: GreenhouseJob): ProcessedJob {
+  const meta = job.metadata ?? []
+  const organisation = getGreenhouseMeta(meta, 'Careers@Gov Organisation') as string | null
+  const jobFunction = getGreenhouseMeta(meta, 'Careers@Gov Job Function') as string | null
+  const empValue = getGreenhouseMeta(meta, 'Careers@Gov Employment Type') as string | null
+  const expLevels =
+    (getGreenhouseMeta(meta, 'Careers@Gov Experience Level') as string[] | null) ?? []
+
+  // Greenhouse conflates employment type and work arrangement in one field.
+  // Route "Full-time"/"Part-time" to workArrangement, everything else to employmentType.
+  const isArrangement = empValue === 'Full-time' || empValue === 'Part-time'
+  const employmentType = !empValue ? '' : isArrangement ? '' : empValue
+  const workArrangement = !empValue ? '' : isArrangement ? empValue : ''
+
+  const { min, max } = parseExperienceLevels(expLevels)
+  const experienceRequired = expLevels.length > 0 ? expLevels.join(', ') : ''
+
+  return {
+    platform: 'greenhouse',
+    postingNo: '',
+    jobId: String(job.id),
+    jobTitle: cleanString(job.title ?? ''),
+    agency: cleanString(organisation ?? job.company_name ?? ''),
+    agencyId: '',
+    agencyDescription: '',
+    startDate: parseISODate(job.first_published),
+    closingDate: parseISODate(job.application_deadline),
+    closingDateText: '',
+    remainingDays: '',
+    employmentType,
+    employmentTypeCode: '',
+    experienceRequired,
+    experienceYearsMin: min,
+    experienceYearsMax: max,
+    field: cleanString(jobFunction ?? ''),
+    fieldCode: '',
+    functionalArea: cleanString(jobFunction ?? ''),
+    functionalAreaCode: '',
+    industry: '',
+    educationCode: job.education ?? '',
+    isNew: false,
+    location: cleanString(job.location?.name ?? ''),
+    jobDescription: cleanString(decodeHtmlEntities(job.content ?? '')),
+    jobResponsibilities: '',
+    jobRequirements: '',
+    category: '',
+    workArrangement,
+  }
+}
+
+/**
+ * Fetch all jobs from a Greenhouse board's public API.
+ * Throws on network or HTTP errors so the workflow fails loudly rather than
+ * silently dropping the board's contribution from the committed output.
+ * A legitimately empty `jobs` array is allowed.
+ */
+async function fetchGreenhouseBoard(board: string): Promise<GreenhouseJob[]> {
+  const url = `https://boards-api.greenhouse.io/v1/boards/${board}/jobs?content=true`
+  console.log(`Fetching Greenhouse board: ${board}`)
+  const response = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (!response.ok) {
+    throw new Error(`Greenhouse fetch failed for ${board}: ${response.status} ${response.statusText}`)
+  }
+  const data = await response.json() as GreenhouseResponse
+  return data.jobs ?? []
+}
+
 /**
  * Main processing function
  */
@@ -312,9 +465,19 @@ async function main() {
     
     console.log(`✅ Fetched details for ${processedJobs.length} jobs`)
 
+    // Fetch and merge Greenhouse-hosted boards (e.g. GovTech)
+    const greenhouseBoards = ['govtech']
+    for (const board of greenhouseBoards) {
+      const greenhouseJobs = await fetchGreenhouseBoard(board)
+      const processed = greenhouseJobs.map(processGreenhouseJob)
+      processedJobs.push(...processed)
+      console.log(`✅ Processed ${processed.length} Greenhouse jobs from ${board}`)
+    }
+
     // Generate statistics
     const stats = {
       totalJobs: processedJobs.length,
+      platforms: [...new Set(processedJobs.map(j => j.platform))].sort(),
       employmentTypes: [...new Set(processedJobs.map(j => j.employmentType))].sort(),
     }
 
@@ -330,6 +493,7 @@ async function main() {
     console.log(`✅ Processed data saved to: ${outputFilename}`)
     console.log(`✅ CSV data saved to: ${csvFilename}`)
     console.log(`   Total jobs: ${stats.totalJobs}`)
+    console.log(`   Platforms: ${stats.platforms.join(', ')}`)
     console.log(`   Employment types: ${stats.employmentTypes.join(', ')}`)
 
   } catch (error) {

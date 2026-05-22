@@ -32,20 +32,22 @@ All fields exported as columns with headers matching the field names below.
 ## Schema Fields
 
 ### Core Identifiers
-- **platform** (string) - Jobs platform identifier (e.g., "hrp", "workable"). Identifies which platform the job is posted on.
+- **platform** (string) - Jobs platform identifier (e.g., "hrp", "workable", "greenhouse"). Identifies which platform the job is posted on.
 - **jobId** (string) - Platform-dependent identifier. **Note**: Despite its name, this field's meaning varies by platform:
   - **hrp**: Numeric job identifier
   - **workable**: Hiring organization identifier (not the job itself)
+  - **greenhouse**: Greenhouse public job id (used as `gh_jid`)
   - Format varies by platform (e.g., numeric string for hrp)
-- **postingNo** (string) - Posting identifier. Format varies by platform (e.g., GUID for hrp). May be empty string for platforms that don't use it.
-- **agencyId** (string) - Agency identifier code (e.g., "0000001308")
+- **postingNo** (string) - Posting identifier. Format varies by platform (e.g., GUID for hrp). May be empty string for platforms that don't use it (e.g., greenhouse).
+- **agencyId** (string) - Agency identifier code (e.g., "0000001308"). May be empty string for platforms without an agency code (e.g., greenhouse).
 
 > **Important**: The `jobId` field name is maintained for backward compatibility with existing data consumers, even though its semantic meaning differs across platforms.
 
 Combined identifier: `platform` + `jobId` + `postingNo` uniquely identifies a job posting.
 Job URL pattern for hrp: `https://jobs.careers.gov.sg/jobs/{platform}/{jobId}/{postingNo}` (e.g., https://jobs.careers.gov.sg/jobs/hrp/15219929/005056a3-d347-1fe1-80df-725f7689c286).
+Job URL pattern for greenhouse: `https://jobs.careers.gov.sg/jobs/{platform}/{jobId}?gh_jid={jobId}` (e.g., https://jobs.careers.gov.sg/jobs/greenhouse/4001978201?gh_jid=4001978201).
 
-> **Note**: URL patterns and identifier roles may vary by platform. For hrp, both jobId and postingNo are required and used in URLs. For workable (Public Service Division), jobId represents the hiring organization.
+> **Note**: URL patterns and identifier roles may vary by platform. For hrp, both jobId and postingNo are required and used in URLs. For workable (Public Service Division), jobId represents the hiring organization. For greenhouse, only jobId is used.
 
 ### Job Information
 - **jobTitle** (string) - Job title, cleaned and trimmed
@@ -53,12 +55,12 @@ Job URL pattern for hrp: `https://jobs.careers.gov.sg/jobs/{platform}/{jobId}/{p
 - **agencyDescription** (string) - Detailed agency description (multiline, markdown-formatted)
 
 ### Dates and Timing
-- **startDate** (string) - Job posting start date as Unix timestamp in milliseconds (e.g., "1770681600000")
-- **closingDate** (string) - Job closing date as Unix timestamp in milliseconds (e.g., "1772928000000")
-- **closingDateText** (string) - Human-readable closing date (e.g., "Closing on 08 Mar 2026")
-- **remainingDays** (string) - Time remaining text (e.g., "Today", "Closing in 3 day(s)")
+- **startDate** (number) - Job posting start date as Unix timestamp in milliseconds (e.g., `1770681600000`)
+- **closingDate** (number | null) - Job closing date as Unix timestamp in milliseconds (e.g., `1772928000000`). May be `null` for platforms that do not publish a deadline (e.g., greenhouse).
+- **closingDateText** (string) - Human-readable closing date (e.g., "Closing on 08 Mar 2026"). Empty string when not provided by the source platform.
+- **remainingDays** (string) - Time remaining text (e.g., "Today", "Closing in 3 day(s)"). Empty string when not provided by the source platform.
 
-> **Note**: Dates are stored as Unix timestamps (milliseconds since epoch). Convert with `new Date(parseInt(timestamp))` or equivalent.
+> **Note**: Dates are stored as Unix timestamps (milliseconds since epoch). Convert with `new Date(timestamp)` or equivalent. Handle `closingDate === null` as "no published deadline".
 
 ### Employment Details
 - **employmentType** (string) - Employment type description (e.g., "Permanent", "Contract", "Permanent/Contract", "Fixed Terms")
@@ -93,6 +95,7 @@ Job URL pattern for hrp: `https://jobs.careers.gov.sg/jobs/{platform}/{jobId}/{p
 > - Bullet points (•)
 > - Rich text formatting
 > - Non-breaking spaces (cleaned during processing)
+> - **Raw HTML markup** (e.g., `<p>`, `<ul>`, `<span>`, inline attributes) — particularly in greenhouse `jobDescription`. Sanitize before rendering to avoid XSS in downstream consumers.
 
 ### Other Fields
 - **isNew** (boolean) - Whether this is a newly posted job (`true` or `false`)
@@ -102,15 +105,16 @@ Job URL pattern for hrp: `https://jobs.careers.gov.sg/jobs/{platform}/{jobId}/{p
 
 ### Data Types
 - **Strings**: All text fields are cleaned (trimmed, non-breaking spaces removed)
-- **Numbers**: Experience years stored as integers
+- **Numbers**: Experience years stored as integers; `startDate` and `closingDate` stored as Unix timestamps in milliseconds
 - **Booleans**: `isNew` stored as boolean `true`/`false`
-- **Timestamps**: Dates stored as strings containing Unix timestamps in milliseconds
+- **Nullable**: `closingDate` may be `null` for platforms that do not publish a deadline
 
 ### Data Quality
-- All fields are required (exist in every record)
+- All fields are present in every record
 - Text fields may be empty strings if no data available or not applicable for the platform
 - `postingNo` may be empty string for platforms that don't use posting identifiers
-- Long text fields (`agencyDescription`, `jobDescription`, `jobResponsibilities`, `jobRequirements`) sourced from job details API
+- `closingDate` may be `null` for platforms that don't publish a deadline (e.g., greenhouse)
+- Long text fields (`agencyDescription`, `jobDescription`, `jobResponsibilities`, `jobRequirements`) sourced from job details API for hrp; for greenhouse the combined description lands in `jobDescription` (with HTML tags preserved) and the responsibilities/requirements fields are empty
 - If job details fetch fails, related fields will be empty strings
 
 ### Typical Dataset Size
@@ -122,12 +126,14 @@ Job URL pattern for hrp: `https://jobs.careers.gov.sg/jobs/{platform}/{jobId}/{p
 
 This data is generated by [scripts/fetch-jobs.ts](../../scripts/fetch-jobs.ts):
 
-1. Fetches job listings from OData endpoint → `data/job-listings-raw.json`
-2. For each job, fetches detailed information from job details endpoint
-3. Merges both sources into flattened schema
-4. Cleans all string fields (trim, remove `\u00a0`)
-5. Converts OData dates (`/Date(timestamp)/`) to Unix timestamps
-6. Outputs both JSON and CSV formats
+1. Fetches hrp job listings from OData endpoint → `data/job-listings-raw.json`
+2. For each hrp job, fetches detailed information from job details endpoint
+3. Fetches Greenhouse-hosted boards (e.g., `govtech`) inline via the public Greenhouse Job Board API
+4. Merges all sources into the flattened schema with a `platform` discriminator
+5. Cleans all string fields (trim, remove `\u00a0`)
+6. Converts OData dates (`/Date(timestamp)/`) and ISO 8601 dates to Unix timestamps
+7. Decodes HTML entities in Greenhouse content while preserving HTML tags
+8. Outputs both JSON and CSV formats
 
 ## Common Operations
 
@@ -136,6 +142,7 @@ This data is generated by [scripts/fetch-jobs.ts](../../scripts/fetch-jobs.ts):
 // Filter by platform
 const hrpJobs = jobs.filter(j => j.platform === "hrp")
 const workableJobs = jobs.filter(j => j.platform === "workable")
+const greenhouseJobs = jobs.filter(j => j.platform === "greenhouse")
 
 // Filter by jobId (note: meaning varies by platform)
 // For hrp: filters by specific job ID
@@ -154,13 +161,13 @@ const permanent = jobs.filter(j => j.employmentType === "Permanent")
 
 ### Date Handling
 ```typescript
-// Convert timestamp to Date object
-const closingDate = new Date(parseInt(job.closingDate))
+// Convert timestamp to Date object (closingDate may be null)
+const closingDate = job.closingDate != null ? new Date(job.closingDate) : null
 
-// Check if closing soon (within 7 days)
+// Check if closing soon (within 7 days). Treat null as "no deadline" → never closing soon.
 const now = Date.now()
-const daysUntilClose = (parseInt(job.closingDate) - now) / (1000 * 60 * 60 * 24)
-const closingSoon = daysUntilClose <= 7
+const closingSoon = job.closingDate != null
+  && (job.closingDate - now) / (1000 * 60 * 60 * 24) <= 7
 ```
 
 ### Text Processing
@@ -175,13 +182,13 @@ const hasTech = job.jobDescription.toLowerCase().includes('technology')
 ## Validation Rules
 
 When working with this data:
-- ✅ `platform` must be non-empty string
-- ✅ `jobId` format and meaning is platform-dependent (numeric string job ID for hrp; hiring organization identifier for workable)
-- ✅ `postingNo` format is platform-dependent (GUID format for hrp; may be empty for other platforms)
-- ✅ `startDate` and `closingDate` must be valid Unix timestamps
+- ✅ `platform` must be non-empty string (`"hrp"`, `"workable"`, `"greenhouse"`, ...)
+- ✅ `jobId` format and meaning is platform-dependent (numeric string job ID for hrp; hiring organization identifier for workable; Greenhouse public job id for greenhouse)
+- ✅ `postingNo` format is platform-dependent (GUID format for hrp; empty string for greenhouse and other platforms without a posting concept)
+- ✅ `startDate` must be a valid Unix timestamp; `closingDate` is a Unix timestamp or `null` (when the source platform does not publish a deadline)
 - ✅ `experienceYearsMin` ≤ `experienceYearsMax`
 - ✅ `isNew` must be boolean type (not string "true"/"false")
-- ✅ No null values - use empty strings instead
+- ✅ Only `closingDate` may be `null`; all other absent values are empty strings
 
 ## Version Control
 
