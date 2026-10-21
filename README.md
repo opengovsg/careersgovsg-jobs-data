@@ -1,6 +1,12 @@
 # careersgovsg-jobs-data
 Job listings as found on jobs.careers.gov.sg
 
+### Disclaimer
+
+The data in this repository is unofficial and not endorsed by PSD. It may be stale to current job listings on Careers@Gov at time of retrieval.
+
+Consider https://jobs.careers.gov.sg as the source of truth.
+
 ## Overview
 This repository uses GitHub Actions to automatically fetch and update Singapore Government job listings from Careers@Gov public data endpoints.
 
