@@ -5,6 +5,8 @@ Job listings as found on jobs.careers.gov.sg
 
 The data in this repository is unofficial and not endorsed by PSD. It may be stale to current job listings on Careers@Gov at time of retrieval.
 
+The data in this repository is governed by the Terms of Use found at https://jobs.careers.gov.sg/terms-of-use.
+
 Consider https://jobs.careers.gov.sg as the source of truth.
 
 ## Overview
